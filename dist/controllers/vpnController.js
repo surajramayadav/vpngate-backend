@@ -89,8 +89,9 @@ const downloadConfigFile = (0, catchAsyncErrors_1.default)((req, res, next) => _
     try {
         const url = req.body.url;
         const resData = yield axios_1.default.get(url);
-        const filePath = (0, process_1.cwd)() + "/src/tmp/";
-        const path = (0, process_1.cwd)() + "/src/tmp/file.opvn";
+        // const filePath = cwd() + "/src/tmp/"
+        const path = __dirname + "/file.opvn";
+        console.log(path);
         const $ = cheerio.load(resData.data);
         const downloadPath = $('#vpngate_inner_contents_td > ul:nth-child(8) > li:nth-child(1) > a').attr("href");
         console.log(downloadPath);
