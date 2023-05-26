@@ -9,7 +9,7 @@ import csv from 'csvtojson'
 import { cwd } from 'process';
 import https from 'https'
 const cheerio = require('cheerio');
-const download = require('download');
+const os = require("os");
 // Add vpn
 const getVpn = catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -107,7 +107,9 @@ const downloadConfigFile = catchAsyncErrors(async (req: Request, res: Response, 
 
     const resData: any = await axios.get(url)
     // const filePath = cwd() + "/src/tmp/"
-    const path = "./file.opvn"
+
+    const tempDir = os.tmpdir(); // /tmp
+    const path = tempDir + "/file.opvn"
     const $ = cheerio.load(resData.data);
     const downloadPath = $('#vpngate_inner_contents_td > ul:nth-child(8) > li:nth-child(1) > a').attr("href")
     console.log(downloadPath)
