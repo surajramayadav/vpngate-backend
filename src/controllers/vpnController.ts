@@ -62,15 +62,18 @@ const scrapeVPNData = catchAsyncErrors(async (req: Request, res: Response, next:
       }
 
       let link: string = $(element).find(`tr:nth-child(${i + 1}) > td:nth-child(7) > a`).attr("href")
-      console.log(link)
+      const bool = link ? true : false
       link = "https://www.vpngate.net/en/" + link
+
+
 
       result.push({
         country: $(element).find(`tr:nth-child(${i + 1}) > td:nth-child(1)`).text(),
         flag,
         ip: $(element).find(`tr:nth-child(${i + 1}) > td:nth-child(2) > span`).text(),
         speed: $(element).find(`tr:nth-child(${i + 1}) > td:nth-child(4) > b:nth-child(1)`).text(),
-        link
+        link,
+        bool
 
       })
 
