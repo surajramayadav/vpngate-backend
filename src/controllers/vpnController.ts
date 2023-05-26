@@ -9,6 +9,7 @@ import csv from 'csvtojson'
 import { cwd } from 'process';
 import https from 'https'
 const cheerio = require('cheerio');
+const download = require('download');
 // Add vpn
 const getVpn = catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -105,24 +106,29 @@ const downloadConfigFile = catchAsyncErrors(async (req: Request, res: Response, 
     const url = req.body.url
 
     const resData: any = await axios.get(url)
+    const filePath = cwd() + "/src/tmp/"
     const path = cwd() + "/src/tmp/file.opvn"
     const $ = cheerio.load(resData.data);
     const downloadPath = $('#vpngate_inner_contents_td > ul:nth-child(8) > li:nth-child(1) > a').attr("href")
     console.log(downloadPath)
     const downloadLink = "https://www.vpngate.net" + downloadPath
 
+
+
     const file = fs.createWriteStream(path);
     https.get(downloadLink, function (response) {
       response.pipe(file);
 
       // after download completed close filestream
+
       file.on("finish", () => {
         file.close();
         console.log("Download Completed");
 
+
         fs.readFile(path, { encoding: 'utf-8' }, function (err, data) {
           if (!err) {
-            console.log('received data: ' + data);
+            // console.log('received data: ' + data);yd
             res.status(200).json({
               success: true,
               data: data,
@@ -134,6 +140,10 @@ const downloadConfigFile = catchAsyncErrors(async (req: Request, res: Response, 
         });
       });
     });
+
+    file.on("error", (err: any) => {
+      console.log("file download error", err)
+    })
 
     // #vpngate_inner_contents_td > ul:nth-child(8) > li:nth-child(1) > a
 

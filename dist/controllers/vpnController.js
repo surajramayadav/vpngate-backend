@@ -21,6 +21,7 @@ const csvtojson_1 = __importDefault(require("csvtojson"));
 const process_1 = require("process");
 const https_1 = __importDefault(require("https"));
 const cheerio = require('cheerio');
+const download = require('download');
 // Add vpn
 const getVpn = (0, catchAsyncErrors_1.default)((req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
@@ -88,6 +89,7 @@ const downloadConfigFile = (0, catchAsyncErrors_1.default)((req, res, next) => _
     try {
         const url = req.body.url;
         const resData = yield axios_1.default.get(url);
+        const filePath = (0, process_1.cwd)() + "/src/tmp/";
         const path = (0, process_1.cwd)() + "/src/tmp/file.opvn";
         const $ = cheerio.load(resData.data);
         const downloadPath = $('#vpngate_inner_contents_td > ul:nth-child(8) > li:nth-child(1) > a').attr("href");
@@ -102,7 +104,7 @@ const downloadConfigFile = (0, catchAsyncErrors_1.default)((req, res, next) => _
                 console.log("Download Completed");
                 fs_1.default.readFile(path, { encoding: 'utf-8' }, function (err, data) {
                     if (!err) {
-                        console.log('received data: ' + data);
+                        // console.log('received data: ' + data);yd
                         res.status(200).json({
                             success: true,
                             data: data,
