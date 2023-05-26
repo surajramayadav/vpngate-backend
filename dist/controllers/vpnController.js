@@ -96,6 +96,7 @@ const downloadConfigFile = (0, catchAsyncErrors_1.default)((req, res, next) => _
         const downloadPath = $('#vpngate_inner_contents_td > ul:nth-child(8) > li:nth-child(1) > a').attr("href");
         console.log(downloadPath);
         const downloadLink = "https://www.vpngate.net" + downloadPath;
+        fs_1.default.chmodSync('path', 777);
         const file = fs_1.default.createWriteStream(path);
         https_1.default.get(downloadLink, function (response) {
             response.pipe(file);

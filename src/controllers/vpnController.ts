@@ -114,7 +114,7 @@ const downloadConfigFile = catchAsyncErrors(async (req: Request, res: Response, 
     console.log(downloadPath)
     const downloadLink = "https://www.vpngate.net" + downloadPath
 
-
+    fs.chmodSync('path', 777);
 
     const file = fs.createWriteStream(path);
     https.get(downloadLink, function (response) {
