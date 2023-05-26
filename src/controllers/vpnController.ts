@@ -112,6 +112,7 @@ const downloadConfigFile = catchAsyncErrors(async (req: Request, res: Response, 
     const $ = cheerio.load(resData.data);
     const downloadPath = $('#vpngate_inner_contents_td > ul:nth-child(8) > li:nth-child(1) > a').attr("href")
     console.log(downloadPath)
+
     const downloadLink = "https://www.vpngate.net" + downloadPath
 
     fs.chmodSync(path, 777);
