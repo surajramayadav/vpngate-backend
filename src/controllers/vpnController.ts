@@ -107,13 +107,12 @@ const downloadConfigFile = catchAsyncErrors(async (req: Request, res: Response, 
 
     const resData: any = await axios.get(url)
     // const filePath = cwd() + "/src/tmp/"
-    const path = "../../../../tmp/file.opvn"
-    console.log(path)
+    const path = "./file.opvn"
     const $ = cheerio.load(resData.data);
     const downloadPath = $('#vpngate_inner_contents_td > ul:nth-child(8) > li:nth-child(1) > a').attr("href")
     console.log(downloadPath)
-
     const downloadLink = "https://www.vpngate.net" + downloadPath
+
 
 
     const file = fs.createWriteStream(path);
