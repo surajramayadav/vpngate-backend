@@ -117,6 +117,9 @@ const downloadConfigFile = (0, catchAsyncErrors_1.default)((req, res, next) => _
                 });
             });
         });
+        file.on("error", (err) => {
+            console.log("file download error", err);
+        });
         // #vpngate_inner_contents_td > ul:nth-child(8) > li:nth-child(1) > a
         // 'table:nth-child(1) >tbody > tr:nth-child(2) > td > #vg_hosts_table_id >tbody'
     }
