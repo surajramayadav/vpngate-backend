@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.downloadConfigFile = exports.scrapeVPNData = exports.getVpn = void 0;
+exports.downloadVpnBookConfig = exports.scrapeVpnBook = exports.downloadConfigFile = exports.scrapeVPNData = exports.getVpn = void 0;
 const catchAsyncErrors_1 = __importDefault(require("../middleware/catchAsyncErrors"));
 const errorHandler_1 = __importDefault(require("../utils/errorHandler"));
 const axios_1 = __importDefault(require("axios"));
@@ -129,4 +129,114 @@ const downloadConfigFile = (0, catchAsyncErrors_1.default)((req, res, next) => _
     }
 }));
 exports.downloadConfigFile = downloadConfigFile;
+const scrapeVpnBook = (0, catchAsyncErrors_1.default)((req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const url = "https://www.vpnbook.com/freevpn/openvpn";
+        const resData = yield axios_1.default.get(url);
+        const $ = cheerio.load(resData.data);
+        // Extract Username and Password
+        const usernameMatch = resData.data.match(/Username<\/label>[\s\S]*?<code[^>]*>([^<]+)<\/code>/i);
+        const passwordMatch = resData.data.match(/Password<\/label>[\s\S]*?<code[^>]*>([^<]+)<\/code>/i);
+        const username = usernameMatch ? usernameMatch[1].trim() : "vpnbook";
+        const password = passwordMatch ? passwordMatch[1].trim() : "";
+        let servers = [];
+        // Try parsing from Next.js hydration data (primary & most detailed method)
+        const startIdx = resData.data.indexOf("\\\"servers\\\":");
+        if (startIdx !== -1) {
+            const bracketStart = resData.data.indexOf("[", startIdx);
+            let bracketCount = 1;
+            let endIdx = bracketStart + 1;
+            while (bracketCount > 0 && endIdx < resData.data.length) {
+                if (resData.data[endIdx] === "[")
+                    bracketCount++;
+                else if (resData.data[endIdx] === "]")
+                    bracketCount--;
+                endIdx++;
+            }
+            const rawJson = resData.data.substring(bracketStart, endIdx);
+            const cleanedJson = rawJson.replace(/\\\"/g, "\"");
+            try {
+                const parsed = JSON.parse(cleanedJson);
+                if (Array.isArray(parsed)) {
+                    servers = parsed.map((s) => {
+                        const cc = s.countryCode ? s.countryCode.toLowerCase() : "";
+                        const protocols = ["tcp443", "tcp80", "udp53", "udp25000"];
+                        return {
+                            name: s.name || s.id,
+                            hostname: s.hostname,
+                            ipAddress: s.ipAddress,
+                            countryCode: s.countryCode,
+                            countryName: s.countryName,
+                            flag: cc ? `https://flagcdn.com/${cc}.svg` : "",
+                            configs: protocols.map(proto => ({
+                                protocol: proto,
+                                vpnbook_url: `https://www.vpnbook.com/api/openvpn?hostname=${s.hostname}&protocol=${proto}${s.ipAddress ? `&ip=${s.ipAddress}` : ""}`,
+                                api_url: `/api/v1/vpn/vpnbook/config?hostname=${s.hostname}&protocol=${proto}`
+                            }))
+                        };
+                    });
+                }
+            }
+            catch (e) {
+                // Fallback to HTML matching
+            }
+        }
+        // Fallback parsing (HTML layout regex)
+        if (servers.length === 0) {
+            const serverRegex = /<button[^>]*>[\s\S]*?<img[^>]*src="([^"]+)"[^>]*>[\s\S]*?<span class="block text-sm font-semibold text-gray-900">([^<]+)<\/span><span class="text-xs text-gray-500">([^<]+)<\/span>/g;
+            let match;
+            while ((match = serverRegex.exec(resData.data)) !== null) {
+                const flag = match[1];
+                const name = match[2].trim();
+                const hostname = match[3].trim();
+                let countryCode = "";
+                const ccMatch = flag.match(/\/([a-zA-Z]{2})\.svg/);
+                if (ccMatch)
+                    countryCode = ccMatch[1].toUpperCase();
+                const protocols = ["tcp443", "tcp80", "udp53", "udp25000"];
+                servers.push({
+                    name,
+                    hostname,
+                    countryCode,
+                    flag,
+                    configs: protocols.map(proto => ({
+                        protocol: proto,
+                        vpnbook_url: `https://www.vpnbook.com/api/openvpn?hostname=${hostname}&protocol=${proto}`,
+                        api_url: `/api/v1/vpn/vpnbook/config?hostname=${hostname}&protocol=${proto}`
+                    }))
+                });
+            }
+        }
+        res.status(200).json({
+            success: true,
+            data: {
+                username,
+                password,
+                servers
+            }
+        });
+    }
+    catch (error) {
+        return next(new errorHandler_1.default(error.message, 500));
+    }
+}));
+exports.scrapeVpnBook = scrapeVpnBook;
+const downloadVpnBookConfig = (0, catchAsyncErrors_1.default)((req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const { hostname, protocol } = req.query;
+        if (!hostname || !protocol) {
+            return next(new errorHandler_1.default("Hostname and protocol query parameters are required", 400));
+        }
+        const url = `https://www.vpnbook.com/api/openvpn?hostname=${hostname}&protocol=${protocol}`;
+        const response = yield axios_1.default.get(url, { responseType: 'text' });
+        // Set headers to trigger direct file download
+        res.setHeader('Content-Type', 'application/x-openvpn-profile');
+        res.setHeader('Content-Disposition', `attachment; filename="vpnbook-${hostname}-${protocol}.ovpn"`);
+        res.send(response.data);
+    }
+    catch (error) {
+        return next(new errorHandler_1.default(error.message, 500));
+    }
+}));
+exports.downloadVpnBookConfig = downloadVpnBookConfig;
 //# sourceMappingURL=vpnController.js.map

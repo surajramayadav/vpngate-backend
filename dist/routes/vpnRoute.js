@@ -8,6 +8,8 @@ const vpnController_1 = require("../controllers/vpnController");
 const router = express_1.default.Router();
 router.route("/").get(vpnController_1.getVpn);
 router.route("/sc").get(vpnController_1.scrapeVPNData);
+router.route("/vpnbook").get(vpnController_1.scrapeVpnBook);
+router.route("/vpnbook/config").get(vpnController_1.downloadVpnBookConfig);
 router.route("/config").post(vpnController_1.downloadConfigFile);
 module.exports = router;
 //# sourceMappingURL=vpnRoute.js.map
