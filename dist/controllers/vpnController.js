@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.downloadVpnBookConfig = exports.scrapeVpnBook = exports.downloadConfigFile = exports.scrapeVPNData = exports.getVpn = void 0;
+exports.getVpnGateCached = exports.downloadVpnBookConfig = exports.scrapeVpnBook = exports.downloadConfigFile = exports.scrapeVPNData = exports.getVpn = void 0;
 const catchAsyncErrors_1 = __importDefault(require("../middleware/catchAsyncErrors"));
 const errorHandler_1 = __importDefault(require("../utils/errorHandler"));
 const axios_1 = __importDefault(require("axios"));
@@ -239,4 +239,154 @@ const downloadVpnBookConfig = (0, catchAsyncErrors_1.default)((req, res, next) =
     }
 }));
 exports.downloadVpnBookConfig = downloadVpnBookConfig;
+// --- Caching Proxy Implementation for VPN Gate ---
+// Helper function to parse quoted fields (e.g. Operator field may contain commas)
+function parseCsvRow(row) {
+    const result = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < row.length; i++) {
+        const ch = row[i];
+        if (ch === '"') {
+            inQuotes = !inQuotes;
+        }
+        else if (ch === ',' && !inQuotes) {
+            result.push(current);
+            current = '';
+        }
+        else {
+            current += ch;
+        }
+    }
+    result.push(current);
+    return result;
+}
+// Generate country flag emoji dynamically from 2-letter ISO code
+function getCountryFlag(countryCode) {
+    if (!countryCode || countryCode.length !== 2)
+        return '🌐';
+    const cc = countryCode.toUpperCase();
+    const codePoints = [
+        cc.charCodeAt(0) - 65 + 0x1F1E6,
+        cc.charCodeAt(1) - 65 + 0x1F1E6
+    ];
+    try {
+        return String.fromCodePoint(...codePoints);
+    }
+    catch (e) {
+        return '🌐';
+    }
+}
+// Parse raw VPN Gate CSV file into compact JSON
+function parseVpnGateCsv(rawText) {
+    const lines = rawText.split(/\r?\n/);
+    const servers = [];
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('*') || trimmed.startsWith('#'))
+            continue;
+        const cols = parseCsvRow(trimmed);
+        if (cols.length < 15)
+            continue;
+        const [hostName, // 0
+        ip, // 1
+        scoreStr, // 2
+        pingStr, // 3
+        speedStr, // 4
+        countryLong, // 5
+        countryShort, // 6
+        , // 7 NumVpnSessions
+        , // 8 Uptime
+        , // 9 TotalUsers
+        , // 10 TotalTraffic
+        , // 11 LogType
+        , // 12 Operator
+        , // 13 Message
+        base64Config, // 14
+        ] = cols;
+        if (!base64Config || base64Config.trim().length < 10)
+            continue;
+        if (!ip || !ip.match(/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/))
+            continue;
+        const speedBps = parseInt(speedStr, 10) || 0;
+        const speedMbps = parseFloat((speedBps / 1000000).toFixed(2));
+        const ping = parseInt(pingStr, 10) || 0;
+        const score = parseInt(scoreStr, 10) || 0;
+        const cc = countryShort.trim().toUpperCase();
+        servers.push({
+            country: countryLong.trim() || cc,
+            flag: getCountryFlag(cc),
+            ip: ip.trim(),
+            speed: `${speedMbps.toFixed(1)} Mbps`,
+            link: base64Config.trim(),
+            bool: true,
+            countryShort: cc,
+            ipClean: ip.trim(),
+            speedMbps,
+            ping,
+            score,
+            hostName: hostName.trim(),
+        });
+    }
+    // Sort by speed descending
+    servers.sort((a, b) => b.speedMbps - a.speedMbps);
+    return servers;
+}
+// Memory caching layers (in addition to Vercel CDN headers)
+let cachedVpnServers = null;
+let cacheExpiryTime = 0;
+let fetchPromise = null;
+const CACHE_DURATION = 15 * 60 * 1000; // 15 minutes
+const fetchAndParseVpnGate = () => __awaiter(void 0, void 0, void 0, function* () {
+    const response = yield axios_1.default.get("https://www.vpngate.net/api/iphone/", {
+        responseType: "text",
+        timeout: 20000,
+    });
+    return parseVpnGateCsv(response.data);
+});
+const getVpnGateCached = (0, catchAsyncErrors_1.default)((req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const now = Date.now();
+        // Cache-Control headers for Vercel edge caching (10 min fresh, 20 min stale revalidation)
+        res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=600, stale-while-revalidate=1200');
+        // Return warm-instance cache if valid
+        if (cachedVpnServers && now < cacheExpiryTime) {
+            return res.status(200).json({
+                success: true,
+                data: cachedVpnServers,
+            });
+        }
+        // Collapse overlapping request fetches
+        if (!fetchPromise) {
+            fetchPromise = fetchAndParseVpnGate()
+                .then((servers) => {
+                cachedVpnServers = servers;
+                cacheExpiryTime = Date.now() + CACHE_DURATION;
+                fetchPromise = null;
+                return servers;
+            })
+                .catch((err) => {
+                fetchPromise = null;
+                throw err;
+            });
+        }
+        const data = yield fetchPromise;
+        res.status(200).json({
+            success: true,
+            data,
+        });
+    }
+    catch (error) {
+        if (cachedVpnServers) {
+            console.warn("Serving stale fallback cache due to error:", error.message);
+            return res.status(200).json({
+                success: true,
+                data: cachedVpnServers,
+                isStaleFallback: true,
+            });
+        }
+        return next(new errorHandler_1.default(error.message || "Failed to fetch VPN list", 500));
+    }
+}));
+exports.getVpnGateCached = getVpnGateCached;
 //# sourceMappingURL=vpnController.js.map

@@ -7,6 +7,7 @@ const express_1 = __importDefault(require("express"));
 const vpnController_1 = require("../controllers/vpnController");
 const router = express_1.default.Router();
 router.route("/").get(vpnController_1.getVpn);
+router.route("/vpngate").get(vpnController_1.getVpnGateCached);
 router.route("/sc").get(vpnController_1.scrapeVPNData);
 router.route("/vpnbook").get(vpnController_1.scrapeVpnBook);
 router.route("/vpnbook/config").get(vpnController_1.downloadVpnBookConfig);
