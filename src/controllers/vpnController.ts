@@ -392,22 +392,8 @@ const getVpnGateCached = catchAsyncErrors(async (req: Request, res: Response, ne
     // 2. Connect to the database
     await connectDb();
 
-    // 3. Try to query high-quality servers first (ping <= 150ms, speed >= 5 Mbps) to ensure quick connection
-    let servers = await VpnServerModel.find({
-      ping: { $gt: 0, $lte: 150 },
-      speedMbps: { $gte: 5 }
-    })
-      .sort({ score: -1, speedMbps: -1, ping: 1 })
-      .lean();
-
-    // 4. Fallback to all active servers if high-quality candidates are scarce (fewer than 10)
-    if (servers.length < 10) {
-      servers = await VpnServerModel.find({
-        ping: { $gt: 0 }
-      })
-        .sort({ score: -1, speedMbps: -1, ping: 1 })
-        .lean();
-    }
+    // 3. Query all active servers from database
+    const servers = await VpnServerModel.find({}).lean();
 
     res.status(200).json({
       success: true,

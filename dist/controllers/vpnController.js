@@ -349,21 +349,8 @@ const getVpnGateCached = (0, catchAsyncErrors_1.default)((req, res, next) => __a
         res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=600, stale-while-revalidate=1200');
         // 2. Connect to the database
         yield connectDb();
-        // 3. Try to query high-quality servers first (ping <= 150ms, speed >= 5 Mbps) to ensure quick connection
-        let servers = yield VpnServer_1.VpnServerModel.find({
-            ping: { $gt: 0, $lte: 150 },
-            speedMbps: { $gte: 5 }
-        })
-            .sort({ score: -1, speedMbps: -1, ping: 1 })
-            .lean();
-        // 4. Fallback to all active servers if high-quality candidates are scarce (fewer than 10)
-        if (servers.length < 10) {
-            servers = yield VpnServer_1.VpnServerModel.find({
-                ping: { $gt: 0 }
-            })
-                .sort({ score: -1, speedMbps: -1, ping: 1 })
-                .lean();
-        }
+        // 3. Query all active servers from database
+        const servers = yield VpnServer_1.VpnServerModel.find({}).lean();
         res.status(200).json({
             success: true,
             data: servers,
