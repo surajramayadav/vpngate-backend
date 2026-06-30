@@ -1,6 +1,7 @@
-
 import { UploadedFile } from 'express-fileupload';
 import { Request, Response, NextFunction } from 'express';
+import mongoose from 'mongoose';
+import { VpnServerModel } from '../models/VpnServer';
 import catchAsyncErrors from "../middleware/catchAsyncErrors";
 import ErrorHandler from "../utils/errorHandler";
 import axios from 'axios';
@@ -375,68 +376,32 @@ function parseVpnGateCsv(rawText: string): any[] {
   return servers;
 }
 
-// Memory caching layers (in addition to Vercel CDN headers)
-let cachedVpnServers: any[] | null = null;
-let cacheExpiryTime = 0;
-let fetchPromise: Promise<any[]> | null = null;
-const CACHE_DURATION = 15 * 60 * 1000; // 15 minutes
-
-const fetchAndParseVpnGate = async (): Promise<any[]> => {
-  const response = await axios.get("https://www.vpngate.net/api/iphone/", {
-    responseType: "text",
-    timeout: 20000,
-  });
-  return parseVpnGateCsv(response.data);
+// Lazy database connection helper optimized for serverless environments
+const connectDb = async () => {
+  if (mongoose.connection.readyState >= 1) return;
+  const DB = process.env.DB_URI || process.env.DB_URI_PRO || process.env.DB_URI_DEV || '';
+  if (!DB) throw new Error('Database connection URI is missing');
+  await mongoose.connect(DB);
 };
 
 const getVpnGateCached = catchAsyncErrors(async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const now = Date.now();
-
-    // Cache-Control headers for Vercel edge caching (10 min fresh, 20 min stale revalidation)
+    // 1. Set Cache-Control headers for Vercel edge caching (10 min fresh, 20 min stale revalidation)
     res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=600, stale-while-revalidate=1200');
 
-    // Return warm-instance cache if valid
-    if (cachedVpnServers && now < cacheExpiryTime) {
-      return res.status(200).json({
-        success: true,
-        data: cachedVpnServers,
-      });
-    }
+    // 2. Connect to the database
+    await connectDb();
 
-    // Collapse overlapping request fetches
-    if (!fetchPromise) {
-      fetchPromise = fetchAndParseVpnGate()
-        .then((servers) => {
-          cachedVpnServers = servers;
-          cacheExpiryTime = Date.now() + CACHE_DURATION;
-          fetchPromise = null;
-          return servers;
-        })
-        .catch((err) => {
-          fetchPromise = null;
-          throw err;
-        });
-    }
-
-    const data = await fetchPromise;
+    // 3. Query all active servers from database
+    const servers = await VpnServerModel.find({}).sort({ speedMbps: -1 }).lean();
 
     res.status(200).json({
       success: true,
-      data,
+      data: servers,
     });
   } catch (error: any) {
-    if (cachedVpnServers) {
-      console.warn("Serving stale fallback cache due to error:", error.message);
-      return res.status(200).json({
-        success: true,
-        data: cachedVpnServers,
-        isStaleFallback: true,
-      });
-    }
-    return next(new ErrorHandler(error.message || "Failed to fetch VPN list", 500));
+    return next(new ErrorHandler(error.message || "Failed to retrieve VPN list", 500));
   }
 });
 
 export { getVpn, scrapeVPNData, downloadConfigFile, scrapeVpnBook, downloadVpnBookConfig, getVpnGateCached }
-

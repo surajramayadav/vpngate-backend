@@ -13,6 +13,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getVpnGateCached = exports.downloadVpnBookConfig = exports.scrapeVpnBook = exports.downloadConfigFile = exports.scrapeVPNData = exports.getVpn = void 0;
+const mongoose_1 = __importDefault(require("mongoose"));
+const VpnServer_1 = require("../models/VpnServer");
 const catchAsyncErrors_1 = __importDefault(require("../middleware/catchAsyncErrors"));
 const errorHandler_1 = __importDefault(require("../utils/errorHandler"));
 const axios_1 = __importDefault(require("axios"));
@@ -332,60 +334,30 @@ function parseVpnGateCsv(rawText) {
     servers.sort((a, b) => b.speedMbps - a.speedMbps);
     return servers;
 }
-// Memory caching layers (in addition to Vercel CDN headers)
-let cachedVpnServers = null;
-let cacheExpiryTime = 0;
-let fetchPromise = null;
-const CACHE_DURATION = 15 * 60 * 1000; // 15 minutes
-const fetchAndParseVpnGate = () => __awaiter(void 0, void 0, void 0, function* () {
-    const response = yield axios_1.default.get("https://www.vpngate.net/api/iphone/", {
-        responseType: "text",
-        timeout: 20000,
-    });
-    return parseVpnGateCsv(response.data);
+// Lazy database connection helper optimized for serverless environments
+const connectDb = () => __awaiter(void 0, void 0, void 0, function* () {
+    if (mongoose_1.default.connection.readyState >= 1)
+        return;
+    const DB = process.env.DB_URI || process.env.DB_URI_PRO || process.env.DB_URI_DEV || '';
+    if (!DB)
+        throw new Error('Database connection URI is missing');
+    yield mongoose_1.default.connect(DB);
 });
 const getVpnGateCached = (0, catchAsyncErrors_1.default)((req, res, next) => __awaiter(void 0, void 0, void 0, function* () {
     try {
-        const now = Date.now();
-        // Cache-Control headers for Vercel edge caching (10 min fresh, 20 min stale revalidation)
+        // 1. Set Cache-Control headers for Vercel edge caching (10 min fresh, 20 min stale revalidation)
         res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=600, stale-while-revalidate=1200');
-        // Return warm-instance cache if valid
-        if (cachedVpnServers && now < cacheExpiryTime) {
-            return res.status(200).json({
-                success: true,
-                data: cachedVpnServers,
-            });
-        }
-        // Collapse overlapping request fetches
-        if (!fetchPromise) {
-            fetchPromise = fetchAndParseVpnGate()
-                .then((servers) => {
-                cachedVpnServers = servers;
-                cacheExpiryTime = Date.now() + CACHE_DURATION;
-                fetchPromise = null;
-                return servers;
-            })
-                .catch((err) => {
-                fetchPromise = null;
-                throw err;
-            });
-        }
-        const data = yield fetchPromise;
+        // 2. Connect to the database
+        yield connectDb();
+        // 3. Query all active servers from database
+        const servers = yield VpnServer_1.VpnServerModel.find({}).sort({ speedMbps: -1 }).lean();
         res.status(200).json({
             success: true,
-            data,
+            data: servers,
         });
     }
     catch (error) {
-        if (cachedVpnServers) {
-            console.warn("Serving stale fallback cache due to error:", error.message);
-            return res.status(200).json({
-                success: true,
-                data: cachedVpnServers,
-                isStaleFallback: true,
-            });
-        }
-        return next(new errorHandler_1.default(error.message || "Failed to fetch VPN list", 500));
+        return next(new errorHandler_1.default(error.message || "Failed to retrieve VPN list", 500));
     }
 }));
 exports.getVpnGateCached = getVpnGateCached;

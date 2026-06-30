@@ -8,6 +8,7 @@
     "start": "node dist/server.js",
     "lint": "eslint . --ext .ts",
     "dev": "nodemon src/server.ts",
+    "sync": "ts-node src/scripts/syncVpnGate.ts",
     "build": "tsc -p ."
   },
   "author": "Suraj Yadav",
