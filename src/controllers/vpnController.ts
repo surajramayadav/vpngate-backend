@@ -392,12 +392,28 @@ const getVpnGateCached = catchAsyncErrors(async (req: Request, res: Response, ne
     // 2. Connect to the database
     await connectDb();
 
-    // 3. Query all active servers from database
-    const servers = await VpnServerModel.find({}).lean();
+    // 3. Query all active servers from database sorted by reliability (score desc, speedMbps desc, ping asc)
+    const servers = await VpnServerModel.find({})
+      .sort({ score: -1, speedMbps: -1, ping: 1 })
+      .lean();
+
+    // 4. Limit the number of servers per country to keep the payload size small (max 5 per country)
+    const maxPerCountry = 5;
+    const countryCounts: Record<string, number> = {};
+    const filteredServers: any[] = [];
+
+    for (const server of servers) {
+      const cc = (server.countryShort || '').toUpperCase();
+      const count = countryCounts[cc] || 0;
+      if (count < maxPerCountry) {
+        filteredServers.push(server);
+        countryCounts[cc] = count + 1;
+      }
+    }
 
     res.status(200).json({
       success: true,
-      data: servers,
+      data: filteredServers,
     });
   } catch (error: any) {
     return next(new ErrorHandler(error.message || "Failed to retrieve VPN list", 500));

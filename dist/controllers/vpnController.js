@@ -349,11 +349,25 @@ const getVpnGateCached = (0, catchAsyncErrors_1.default)((req, res, next) => __a
         res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=600, stale-while-revalidate=1200');
         // 2. Connect to the database
         yield connectDb();
-        // 3. Query all active servers from database
-        const servers = yield VpnServer_1.VpnServerModel.find({}).lean();
+        // 3. Query all active servers from database sorted by reliability (score desc, speedMbps desc, ping asc)
+        const servers = yield VpnServer_1.VpnServerModel.find({})
+            .sort({ score: -1, speedMbps: -1, ping: 1 })
+            .lean();
+        // 4. Limit the number of servers per country to keep the payload size small (max 5 per country)
+        const maxPerCountry = 5;
+        const countryCounts = {};
+        const filteredServers = [];
+        for (const server of servers) {
+            const cc = (server.countryShort || '').toUpperCase();
+            const count = countryCounts[cc] || 0;
+            if (count < maxPerCountry) {
+                filteredServers.push(server);
+                countryCounts[cc] = count + 1;
+            }
+        }
         res.status(200).json({
             success: true,
-            data: servers,
+            data: filteredServers,
         });
     }
     catch (error) {
